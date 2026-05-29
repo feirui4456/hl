@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>流光指標卡組件</title>
+    <title>流光指標卡組件 - 整合編輯功能</title>
     <style>
         /* ==========================================
            1. 畫布環境重置（去除網頁邊距，背景設為透明）
@@ -16,9 +16,10 @@
         }
 
         body {
-            background-color: transparent; /* 背景透明，方便嵌入任何地方 */
-            display: inline-block;         /* 讓網頁主體只跟著內容大小走 */
+            background-color: transparent; 
+            display: inline-block;         
             overflow: hidden;
+            padding: 20px; /* 加點邊距方便在瀏覽器測試，實際嵌入可刪除 */
         }
 
         /* ==========================================
@@ -63,6 +64,7 @@
             flex-direction: column;
             justify-content: space-between;
             z-index: 2;
+            overflow: hidden; /* 確保子元件（如彈窗）不溢出邊框 */
         }
 
         /* ==========================================
@@ -81,7 +83,7 @@
             letter-spacing: 0.5px;
         }
 
-        /* LIVE 閃爍呼吸燈 */
+        /* LIVE 閃爍呼吸燈（增加點擊手勢） */
         .live-badge {
             display: flex;
             align-items: center;
@@ -92,6 +94,13 @@
             padding: 4px 8px;
             border-radius: 20px;
             font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            user-select: none;
+        }
+
+        .live-badge:hover {
+            background: rgba(0, 229, 255, 0.25);
         }
 
         .pulse-dot {
@@ -136,7 +145,93 @@
         }
 
         /* ==========================================
-           4. 動態特效 Animation
+           4. 新增：修改指標的小窗口 (Modal Panel)
+           ========================================== */
+        .edit-panel {
+            position: absolute;
+            inset: 0; /* 完美填滿 card-inner-content，不溢出 */
+            background: rgba(17, 24, 39, 0.95); /* 深色遮罩 */
+            backdrop-filter: blur(4px);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 10px;
+            z-index: 10;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease-in-out;
+        }
+
+        /* 當啟動修改時顯示 */
+        .edit-panel.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .edit-panel-title {
+            font-size: 14px;
+            color: #00e5ff;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .form-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group label {
+            font-size: 12px;
+            color: #9ca3af;
+            width: 40px;
+            flex-shrink: 0;
+        }
+
+        .form-group input {
+            flex: 1;
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            color: #fff;
+            padding: 4px 8px;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .form-group input:focus {
+            border-color: #00e5ff;
+        }
+
+        .btn-group {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .btn {
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            border: none;
+            font-weight: 500;
+        }
+
+        .btn-submit {
+            background: #00e5ff;
+            color: #111827;
+        }
+
+        .btn-cancel {
+            background: #374151;
+            color: #9ca3af;
+        }
+
+        /* ==========================================
+           5. 動態特效 Animation
            ========================================== */
         @keyframes rotateGlow {
             0% { transform: rotate(0deg); }
@@ -155,18 +250,38 @@
     <div class="glow-card-container">
         <div class="card-inner-content">
             <div class="card-header">
-                <span class="card-title">實時自動化生產速率</span>
-                <div class="live-badge">
+                <span class="card-title" id="cardTitle">實時自動化生產速率</span>
+                <div class="live-badge" id="liveBtn">
                     <span class="pulse-dot"></span>LIVE
                 </div>
             </div>
             <div class="card-body">
                 <span class="metric-number" id="dynamicNum" data-target="2845">0</span>
-                <span class="metric-unit">pcs/hr</span>
+                <span class="metric-unit" id="metricUnit">pcs/hr</span>
             </div>
             <div class="card-footer">
                 <span class="trend-up">▲ 14.8%</span>
                 <span style="color: #6b7280;">對比昨日同時段</span>
+            </div>
+
+            <div class="edit-panel" id="editPanel">
+                <div class="edit-panel-title">參數設定</div>
+                <div class="form-group">
+                    <label>標題</label>
+                    <input type="text" id="inputTitle" value="">
+                </div>
+                <div class="form-group">
+                    <label>數值</label>
+                    <input type="number" id="inputNum" value="">
+                </div>
+                <div class="form-group">
+                    <label>單位</label>
+                    <input type="text" id="inputUnit" value="">
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-cancel" id="btnCancel">取消</button>
+                    <button class="btn btn-submit" id="btnSave">確定</button>
+                </div>
             </div>
         </div>
     </div>
@@ -174,12 +289,25 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const numElement = document.getElementById('dynamicNum');
-            const target = parseInt(numElement.getAttribute('data-target'));
+            const titleElement = document.getElementById('cardTitle');
+            const unitElement = document.getElementById('metricUnit');
             
+            const liveBtn = document.getElementById('liveBtn');
+            const editPanel = document.getElementById('editPanel');
+            const btnCancel = document.getElementById('btnCancel');
+            const btnSave = document.getElementById('btnSave');
+
+            const inputTitle = document.getElementById('inputTitle');
+            const inputNum = document.getElementById('inputNum');
+            const inputUnit = document.getElementById('inputUnit');
+
+            let target = parseInt(numElement.getAttribute('data-target'));
             const duration = 2000; 
-            const stepTime = Math.max(Math.floor(duration / target), 15);
+            let stepTime = Math.max(Math.floor(duration / target), 15);
             let current = 0;
+            let fluctuationInterval; // 用來儲存和清除跳動定時器
             
+            // 初始跑馬燈數字動畫
             const timer = setInterval(() => {
                 current += Math.ceil(target / (duration / stepTime));
                 if (current >= target) {
@@ -191,13 +319,52 @@
                 }
             }, stepTime);
 
+            // 隨機動態跳動函數
             function startLiveFluctuation() {
-                setInterval(() => {
+                if(fluctuationInterval) clearInterval(fluctuationInterval);
+                fluctuationInterval = setInterval(() => {
                     let currentNum = parseInt(numElement.textContent.replace(/,/g, ''));
-                    const change = Math.floor(Math.random() * 31) - 15; 
-                    numElement.textContent = (currentNum + change).toLocaleString();
+                    if(!isNaN(currentNum)) {
+                        const change = Math.floor(Math.random() * 31) - 15; // -15 ~ +15 隨機變動
+                        numElement.textContent = (currentNum + change).toLocaleString();
+                    }
                 }, 3000);
             }
+
+            // 點擊 LIVE 開啟控制面板
+            liveBtn.addEventListener('click', () => {
+                // 將當前卡片文字與數值填入輸入框
+                inputTitle.value = titleElement.textContent;
+                inputNum.value = parseInt(numElement.textContent.replace(/,/g, '')) || target;
+                inputUnit.value = unitElement.textContent;
+
+                editPanel.classList.add('active');
+            });
+
+            // 關閉面板（取消）
+            btnCancel.addEventListener('click', () => {
+                editPanel.classList.remove('active');
+            });
+
+            // 儲存修改
+            btnSave.addEventListener('click', () => {
+                // 更新標題與單位
+                titleElement.textContent = inputTitle.value;
+                unitElement.textContent = inputUnit.value;
+
+                // 更新核心數值與 target 的基底
+                const newNum = parseInt(inputNum.value);
+                if (!isNaN(newNum)) {
+                    target = newNum;
+                    numElement.textContent = target.toLocaleString();
+                    numElement.setAttribute('data-target', target);
+                    
+                    // 重啟即時數值隨機微幅跳動
+                    startLiveFluctuation();
+                }
+
+                editPanel.classList.remove('active');
+            });
         });
     </script>
 </body>
